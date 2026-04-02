@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-从 stage1_640x640 的 masks 生成 COCO 格式 bbox 标注。
+从 stage1_640x640 的 masks 生成 COCO 格式 bbox 标注。.
 
 mask 像素值约定：
   sirstv2 : target=255,  ignore=128（真目标=255，填充/忽略区域=128）
@@ -11,27 +11,26 @@ COCO bbox 格式：[x_min, y_min, width, height]（绝对像素，非归一化�
 """
 
 from __future__ import annotations
+
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-
 # ─────────────────────────────────────────────
 # 配置
 # ─────────────────────────────────────────────
-STAGE1_DIR  = Path("/data1/undergraduate/ultralytics/stage1_640x640")
-IMG_DIR     = STAGE1_DIR / "images"
-MASK_DIR    = STAGE1_DIR / "masks"
-OUTPUT_DIR  = Path("/data1/undergraduate/ultralytics/coco_annotations")
+STAGE1_DIR = Path("/data1/undergraduate/ultralytics/stage1_640x640")
+IMG_DIR = STAGE1_DIR / "images"
+MASK_DIR = STAGE1_DIR / "masks"
+OUTPUT_DIR = Path("/data1/undergraduate/ultralytics/coco_annotations")
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 CATEGORY_NAME = "infrared_target"
-SPLIT         = "train"
+SPLIT = "train"
 
 # ─────────────────────────────────────────────
 # mask 值映射：每个子数据集的 target 和 ignore 值
@@ -41,35 +40,34 @@ SPLIT         = "train"
 DATASET_MASK_CONFIG = {
     "sirstv2": {"target": 255, "ignore": 128},  # target=真目标, ignore=填充/忽略区域
     "irstd1k": {"target": 255, "ignore": None},
-    "nudt":    {"target": 255, "ignore": None},
+    "nudt": {"target": 255, "ignore": None},
 }
 
 
 def get_mask_config(fname: str) -> dict:
-    """根据文件名确定 mask 值配置。"""
+    """根据文件名确定 mask 值配置。."""
     for prefix, cfg in DATASET_MASK_CONFIG.items():
         if fname.startswith(prefix):
             return cfg
-    return {"target": 255, "ignore": None}   # 默认
+    return {"target": 255, "ignore": None}  # 默认
 
 
 # ─────────────────────────────────────────────
 # 辅助函数
 # ─────────────────────────────────────────────
 
-def find_instances(mask: np.ndarray, target_val: int, ignore_val: Optional[int] = None):
+
+def find_instances(mask: np.ndarray, target_val: int, ignore_val: int | None = None):
+    """在 mask == target_val 的像素中寻找所有连通域（实例）。 ignore_val 像素被当作背景排除（即使值非零）。 返回 list of (inst_mask, rmin, cmin, rmax,
+    cmax)。.
     """
-    在 mask == target_val 的像素中寻找所有连通域（实例）。
-    ignore_val 像素被当作背景排除（即使值非零）。
-    返回 list of (inst_mask, rmin, cmin, rmax, cmax)。
-    """
-    target_pixels = (mask == target_val)
+    target_pixels = mask == target_val
     if ignore_val is not None:
         target_pixels = target_pixels & (mask != ignore_val)
     labeled, num = ndimage.label(target_pixels)
     instances = []
     for i in range(1, num + 1):
-        inst_mask = (labeled == i)
+        inst_mask = labeled == i
         rows = np.any(inst_mask, axis=1)
         cols = np.any(inst_mask, axis=0)
         if not np.any(rows) or not np.any(cols):
@@ -81,13 +79,14 @@ def find_instances(mask: np.ndarray, target_val: int, ignore_val: Optional[int] 
 
 
 def mask_to_bbox(rmin: int, cmin: int, rmax: int, cmax: int):
-    """[x_min, y_min, width, height]，x=cmin, y=rmin"""
+    """[x_min, y_min, width, height]，x=cmin, y=rmin."""
     return float(cmin), float(rmin), float(cmax - cmin + 1), float(rmax - rmin + 1)
 
 
 # ─────────────────────────────────────────────
 # 主逻辑
 # ─────────────────────────────────────────────
+
 
 def build_coco_annotations():
     img_files = sorted(IMG_DIR.glob("*.png"))
@@ -98,15 +97,15 @@ def build_coco_annotations():
 
     # ── 1. 构建 COCO 结构 ──
     info = {
-        "year": 2026, "version": "1.0",
+        "year": 2026,
+        "version": "1.0",
         "description": "Infrared small target detection dataset (stage1_640x640)",
-        "contributor": "Ultralytics", "url": "",
-        "date_created": "2026-04-02"
+        "contributor": "Ultralytics",
+        "url": "",
+        "date_created": "2026-04-02",
     }
     licenses = [{"id": 1, "name": "Unknown", "url": ""}]
-    categories = [{
-        "id": 1, "name": CATEGORY_NAME, "supercategory": "object"
-    }]
+    categories = [{"id": 1, "name": CATEGORY_NAME, "supercategory": "object"}]
 
     images_list = []
     annotations_list = []
@@ -121,14 +120,19 @@ def build_coco_annotations():
         h, w = mask.shape
         coco_img_id = img_idx + 1
 
-        images_list.append({
-            "id": coco_img_id,
-            "file_name": fname,
-            "width": w, "height": h,
-            "date_captured": "", "license": 1,
-            "coco_url": "", "flickr_url": "",
-            "seg_file_name": fname,
-        })
+        images_list.append(
+            {
+                "id": coco_img_id,
+                "file_name": fname,
+                "width": w,
+                "height": h,
+                "date_captured": "",
+                "license": 1,
+                "coco_url": "",
+                "flickr_url": "",
+                "seg_file_name": fname,
+            }
+        )
 
         # ── 找所有目标连通域（只从 target_val 像素计算 bbox，忽略 ignore_val）──
         instances = find_instances(mask, cfg["target"], cfg.get("ignore"))
@@ -145,15 +149,17 @@ def build_coco_annotations():
             area = float(np.sum(inst_mask))
             if area <= 0:
                 continue
-            annotations_list.append({
-                "id": ann_id,
-                "image_id": coco_img_id,
-                "category_id": 1,
-                "bbox": [x, y, bw, bh],
-                "area": area,
-                "iscrowd": 0,
-                "segmentation": [],
-            })
+            annotations_list.append(
+                {
+                    "id": ann_id,
+                    "image_id": coco_img_id,
+                    "category_id": 1,
+                    "bbox": [x, y, bw, bh],
+                    "area": area,
+                    "iscrowd": 0,
+                    "segmentation": [],
+                }
+            )
             ann_id += 1
 
     # ── 保存 ──
@@ -176,11 +182,11 @@ def build_coco_annotations():
     print(f"  有目标图    : {stats['has_target']}")
 
     if annotations_list:
-        areas  = [a["area"] for a in annotations_list]
+        areas = [a["area"] for a in annotations_list]
         bboxes = [a["bbox"] for a in annotations_list]
         ws = [b[2] for b in bboxes]
         hs = [b[3] for b in bboxes]
-        print(f"\n=== 标注统计 ===")
+        print("\n=== 标注统计 ===")
         print(f"area   min={min(areas):.1f}  max={max(areas):.1f}  mean={np.mean(areas):.1f}")
         print(f"bbox w min={min(ws):.1f}  max={max(ws):.1f}  mean={np.mean(ws):.1f}")
         print(f"bbox h min={min(hs):.1f}  max={max(hs):.1f}  mean={np.mean(hs):.1f}")

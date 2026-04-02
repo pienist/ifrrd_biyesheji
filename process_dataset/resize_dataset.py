@@ -2,20 +2,21 @@
 将 stage1_cleaned 中的图片和掩码 resize 到 640x640
 - 保持文件名不变
 - 非正方形图片用黑色(0)填充图片，忽略标签(128)填充掩码
-- 输出到 stage1_640x640 文件夹
+- 输出到 stage1_640x640 文件夹.
 """
 
 from pathlib import Path
+
 from PIL import Image
-import shutil
 
 # 配置
 INPUT_DIR = Path("/data1/undergraduate/ultralytics/stage1_cleaned")
 OUTPUT_DIR = Path("/data1/undergraduate/ultralytics/stage1_640x640")
 TARGET_SIZE = (640, 640)
 
+
 def resize_with_padding(input_path: Path, output_path: Path, target_size: tuple):
-    """将图片 resize 并用黑色填充到目标尺寸"""
+    """将图片 resize 并用黑色填充到目标尺寸."""
     img = Image.open(input_path)
 
     # 计算缩放比例（保持宽高比）
@@ -41,6 +42,7 @@ def resize_with_padding(input_path: Path, output_path: Path, target_size: tuple)
 
     # 保存
     canvas.save(output_path, optimize=False)
+
 
 def main():
     # 创建输出目录
@@ -75,14 +77,14 @@ def main():
     print(f"只有掩码: {len(only_mask)}")
 
     if only_img:
-        print(f"\n警告: 以下图片没有对应掩码，将跳过:")
+        print("\n警告: 以下图片没有对应掩码，将跳过:")
         for k in sorted(only_img)[:5]:
             print(f"  - {k}")
         if len(only_img) > 5:
             print(f"  ... 还有 {len(only_img) - 5} 个")
 
     if only_mask:
-        print(f"\n警告: 以下掩码没有对应图片，将跳过:")
+        print("\n警告: 以下掩码没有对应图片，将跳过:")
         for k in sorted(only_mask)[:5]:
             print(f"  - {k}")
         if len(only_mask) > 5:
@@ -128,19 +130,20 @@ def main():
             success += 1
 
             if i % 500 == 0 or i == len(common):
-                print(f"进度: {i}/{len(common)} ({i/len(common)*100:.1f}%)")
+                print(f"进度: {i}/{len(common)} ({i / len(common) * 100:.1f}%)")
 
         except Exception as e:
             failed.append((stem, str(e)))
             print(f"错误: {stem} - {e}")
 
     print("-" * 50)
-    print(f"处理完成!")
+    print("处理完成!")
     print(f"成功: {success}/{len(common)}")
     if failed:
         print(f"失败: {len(failed)}")
         for stem, err in failed[:10]:
             print(f"  - {stem}: {err}")
+
 
 if __name__ == "__main__":
     main()

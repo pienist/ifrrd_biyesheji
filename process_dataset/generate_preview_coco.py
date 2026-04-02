@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-四象限预览：验证 instances_train.json 的标注质量（不看 masks 文件夹，仅交叉对比）。
+四象限预览：验证 instances_train.json 的标注质量（不看 masks 文件夹，仅交叉对比）。.
 
   左上：从 JSON segmentation 多边形推理出的掩膜（绿），叠在原图上
   左下：从 JSON bbox（蓝框），叠在原图上
@@ -17,35 +17,31 @@
 import argparse
 import json
 import random
-import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
 
-
 # ── 路径配置 ──────────────────────────────────────────────
-STAGE1_DIR  = Path("/data1/undergraduate/ultralytics/stage1_640x640")
-IMG_DIR     = STAGE1_DIR / "images"
-MASK_DIR    = STAGE1_DIR / "masks"
-OUTPUT_DIR  = Path("/data1/undergraduate/ultralytics/coco_annotations/preview_coco")
-COCO_JSON   = Path("/data1/undergraduate/ultralytics/coco_annotations/instances_train_segmented.json")
+STAGE1_DIR = Path("/data1/undergraduate/ultralytics/stage1_640x640")
+IMG_DIR = STAGE1_DIR / "images"
+MASK_DIR = STAGE1_DIR / "masks"
+OUTPUT_DIR = Path("/data1/undergraduate/ultralytics/coco_annotations/preview_coco")
+COCO_JSON = Path("/data1/undergraduate/ultralytics/coco_annotations/instances_train_segmented.json")
 
 # ── 颜色配置 ──────────────────────────────────────────────
-COLOR_SEG  = (0, 255, 0)   # 绿  – segmentation 推理掩膜
-COLOR_BBOX = (255, 0, 0)   # 蓝  – bbox
+COLOR_SEG = (0, 255, 0)  # 绿  – segmentation 推理掩膜
+COLOR_BBOX = (255, 0, 0)  # 蓝  – bbox
 
 
 # ─────────────────────────────────────────────────────────
 # 工具函数
 # ─────────────────────────────────────────────────────────
 
+
 def polygons_to_mask(polygons, H, W):
-    """
-    将 COCO segmentation 多边形列表转换为二值掩膜图像。
-    polygons: list of [x1,y1,x2,y2,...]
-    返回 HxW np.uint8，255 表示目标区域
+    """将 COCO segmentation 多边形列表转换为二值掩膜图像。 polygons: list of [x1,y1,x2,y2,...] 返回 HxW np.uint8，255 表示目标区域.
     """
     mask = np.zeros((H, W), dtype=np.uint8)
     for poly in polygons:
@@ -55,7 +51,7 @@ def polygons_to_mask(polygons, H, W):
 
 
 def draw_bboxes(overlay, annotations, color=COLOR_BBOX):
-    """在图像上绘制所有 bbox。"""
+    """在图像上绘制所有 bbox。."""
     for ann in annotations:
         x, y, w, h = ann["bbox"]
         x, y, w, h = int(x), int(y), int(w), int(h)
@@ -68,14 +64,14 @@ def draw_bboxes(overlay, annotations, color=COLOR_BBOX):
 # 单图生成
 # ─────────────────────────────────────────────────────────
 
+
 def generate_one(fname: str, coco: dict) -> bool:
-    """生成一张四象限预览图。"""
+    """生成一张四象限预览图。."""
     if not fname.endswith(".png"):
         fname += ".png"
 
     # 1. 找 JSON 条目
-    img_entry = next(
-        (im for im in coco["images"] if im["file_name"] == fname), None)
+    img_entry = next((im for im in coco["images"] if im["file_name"] == fname), None)
     if img_entry is None:
         print(f"  ⚠  {fname}: 未在 instances_train.json 中找到，跳过")
         return False
@@ -110,15 +106,14 @@ def generate_one(fname: str, coco: dict) -> bool:
 
     # 5. 绘制四象限
     H, W = orig.shape[:2]
-    CW = W * 2 + 4   # 含分隔线的整图宽度
-    CH = H * 2 + 4   # 含分隔线的整图高度
+    CW = W * 2 + 4  # 含分隔线的整图宽度
+    H * 2 + 4  # 含分隔线的整图高度
 
     # 左上：原图 + 绿 segmentation 掩膜
     tl = orig.copy()
     mask_vis = np.zeros((H, W, 3), dtype=np.uint8)
     mask_vis[:, :, 1] = seg_mask  # 绿通道
-    mask_contours, _ = cv2.findContours(
-        seg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    mask_contours, _ = cv2.findContours(seg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(mask_vis, mask_contours, -1, (0, 255, 0), 1)
     tl = cv2.addWeighted(tl, 0.6, mask_vis, 0.4, 0)
 
@@ -134,22 +129,18 @@ def generate_one(fname: str, coco: dict) -> bool:
     br = orig.copy()
 
     # ── 组装四象限 ──
-    sep_v = np.full((H, 4, 3), 180, dtype=np.uint8)   # 垂直分隔线
+    sep_v = np.full((H, 4, 3), 180, dtype=np.uint8)  # 垂直分隔线
     sep_h = np.full((4, CW, 3), 180, dtype=np.uint8)  # 水平分隔线
 
-    row_top    = np.hstack([tl, sep_v, tr])
+    row_top = np.hstack([tl, sep_v, tr])
     row_bottom = np.hstack([bl, sep_v, br])
     canvas = np.vstack([row_top, sep_h, row_bottom])
 
     # 文本标注（坐标基于拼接后的画布）
-    cv2.putText(canvas, "seg from JSON (green)", (8, 22),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_SEG, 1)
-    cv2.putText(canvas, "mask from folder", (W + 12, 22),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
-    cv2.putText(canvas, f"bbox (n={len(anns)})", (8, H + 22),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_BBOX, 1)
-    cv2.putText(canvas, "original image", (W + 12, H + 22),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(canvas, "seg from JSON (green)", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_SEG, 1)
+    cv2.putText(canvas, "mask from folder", (W + 12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
+    cv2.putText(canvas, f"bbox (n={len(anns)})", (8, H + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_BBOX, 1)
+    cv2.putText(canvas, "original image", (W + 12, H + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     # ── 保存 ──
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,6 +153,7 @@ def generate_one(fname: str, coco: dict) -> bool:
 # ─────────────────────────────────────────────────────────
 # 主入口
 # ─────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="生成 COCO 标注四象限预览")
@@ -178,7 +170,7 @@ def main():
         coco = json.load(f)
 
     images = coco["images"]
-    anns   = coco["annotations"]
+    anns = coco["annotations"]
 
     # ── 统计 ──
     ann_by_img = {}
@@ -189,7 +181,7 @@ def main():
     img_ids = {im["id"] for im in images}
     json_files = {im["file_name"] for im in images}
     mask_files = {f.name for f in MASK_DIR.glob("*.png")} if MASK_DIR.exists() else set()
-    img_files  = {f.name for f in IMG_DIR.glob("*.png")} if IMG_DIR.exists() else set()
+    img_files = {f.name for f in IMG_DIR.glob("*.png")} if IMG_DIR.exists() else set()
 
     print("=" * 60)
     print("COCO JSON vs stage1_640x640 一致性检查")
@@ -198,9 +190,9 @@ def main():
     print(f"  IMG files:     {len(img_files)}")
     print(f"  MASK files:    {len(mask_files)}")
 
-    only_json  = json_files - mask_files
-    only_mask  = mask_files - json_files
-    only_img   = img_files  - json_files
+    only_json = json_files - mask_files
+    only_mask = mask_files - json_files
+    only_img = img_files - json_files
 
     print(f"\n  JSON 有但 mask 没有: {len(only_json)} 个")
     if only_json:
@@ -225,7 +217,7 @@ def main():
 
     # 无标注的图像
     annotated_ids = set(ann_by_img.keys())
-    unannotated    = img_ids - annotated_ids
+    unannotated = img_ids - annotated_ids
     print(f"\n  JSON images 无任何 annotation: {len(unannotated)} 个")
 
     # 无 segmentation 的 annotation
@@ -237,7 +229,7 @@ def main():
     for im in images:
         n = len(ann_by_img.get(im["id"], []))
         cnt_by_n[n] = cnt_by_n.get(n, 0) + 1
-    print(f"\n  每张图的 annotation 数量分布:")
+    print("\n  每张图的 annotation 数量分布:")
     for n in sorted(cnt_by_n):
         print(f"    {n} 个目标: {cnt_by_n[n]} 张图")
 
@@ -266,7 +258,7 @@ def main():
             k = min(per_bucket, len(pool))
             sampled.extend(random.sample(pool, k))
 
-        names = sampled[:args.n]
+        names = sampled[: args.n]
 
     print(f"\n将生成 {len(names)} 张预览图...\n")
     success = sum(generate_one(n, coco) for n in names)
