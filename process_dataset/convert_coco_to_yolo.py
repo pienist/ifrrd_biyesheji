@@ -18,8 +18,7 @@ from pycocotools import mask as mask_util
 
 
 def rle_to_polygon(rle, img_height, img_width):
-    """将 RLE 格式转换为 polygon 点列表 使用 OpenCV 提取轮廓.
-    """
+    """将 RLE 格式转换为 polygon 点列表 使用 OpenCV 提取轮廓."""
     # 解码 RLE 为二进制 mask
     binary_mask = mask_util.decode(rle).astype(np.uint8)
 
@@ -47,8 +46,7 @@ def rle_to_polygon(rle, img_height, img_width):
 
 
 def polygon_to_yolo(polygon, img_height, img_width):
-    """将 COCO polygon 点列表转换为 YOLO 归一化格式 polygon: [x1, y1, x2, y2, ...] 像素绝对坐标 返回: [x1, y1, x2, y2, ...] 归一化坐标 (0~1).
-    """
+    """将 COCO polygon 点列表转换为 YOLO 归一化格式 polygon: [x1, y1, x2, y2, ...] 像素绝对坐标 返回: [x1, y1, x2, y2, ...] 归一化坐标 (0~1)."""
     coords = []
     for i in range(0, len(polygon), 2):
         x = polygon[i] / img_width

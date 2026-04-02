@@ -85,8 +85,7 @@ def draw_bboxes(overlay: np.ndarray, annotations: list):
 
 
 def draw_mask_contour(overlay: np.ndarray, mask: np.ndarray, target_val: int):
-    """在 overlay 上绘制 mask 目标区域的绿色轮廓（只绘制 target_val 像素）。 mask 轮廓用 cv2.findContours 提取，再画到 overlay 上。.
-    """
+    """在 overlay 上绘制 mask 目标区域的绿色轮廓（只绘制 target_val 像素）。 mask 轮廓用 cv2.findContours 提取，再画到 overlay 上。."""
     binary = ((mask == target_val) * 255).astype(np.uint8)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -100,8 +99,7 @@ def draw_mask_contour(overlay: np.ndarray, mask: np.ndarray, target_val: int):
 
 
 def generate_preview(orig_fname: str, coco: dict) -> bool:
-    """为一张图片生成分屏 preview： 左半 = 原图 + 红 bbox 右半 = 原图 + 绿 mask 轮廓.
-    """
+    """为一张图片生成分屏 preview： 左半 = 原图 + 红 bbox 右半 = 原图 + 绿 mask 轮廓."""
     if not orig_fname.endswith(".png"):
         orig_fname += ".png"
 

@@ -95,8 +95,7 @@ def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
 
 
 def compute_bbox_from_polygon(polygon: list[float]) -> tuple[float, float, float, float]:
-    """从 polygon 坐标序列计算 axis-aligned bbox。 返回 (x_min, y_min, width, height)，COCO bbox 格式。.
-    """
+    """从 polygon 坐标序列计算 axis-aligned bbox。 返回 (x_min, y_min, width, height)，COCO bbox 格式。."""
     xs = polygon[0::2]
     ys = polygon[1::2]
     x_min = min(xs)

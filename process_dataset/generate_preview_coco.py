@@ -41,8 +41,7 @@ COLOR_BBOX = (255, 0, 0)  # 蓝  – bbox
 
 
 def polygons_to_mask(polygons, H, W):
-    """将 COCO segmentation 多边形列表转换为二值掩膜图像。 polygons: list of [x1,y1,x2,y2,...] 返回 HxW np.uint8，255 表示目标区域.
-    """
+    """将 COCO segmentation 多边形列表转换为二值掩膜图像。 polygons: list of [x1,y1,x2,y2,...] 返回 HxW np.uint8，255 表示目标区域."""
     mask = np.zeros((H, W), dtype=np.uint8)
     for poly in polygons:
         pts = np.array(poly, dtype=np.int32).reshape(-1, 2)
