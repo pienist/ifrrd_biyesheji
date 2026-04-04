@@ -8,24 +8,23 @@
 └── images/
     ├── test/       (软链接 → stage1_640x640/images/)
     ├── train/      (软链接 → stage1_640x640/images/)
-    └── val/        (软链接 → stage1_640x640/images/)
+    └── val/        (软链接 → stage1_640x640/images/).
 """
 
+import csv
 import json
 import os
-import csv
-import shutil
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # ── 路径配置 ──────────────────────────────────────────────
-ROOT        = Path("/data1/undergraduate/ultralytics")
-SRC_JSON    = ROOT / "coco_annotations" / "instances_train_segmented.json"
-SRC_IMG_DIR = ROOT / "stage1_640x640"   / "images"
-CSV_PATH    = ROOT / "split_record.csv"
-DST_ROOT    = ROOT / "dataset_coco"
-DST_IMG     = DST_ROOT / "images"
-DST_ANN     = DST_ROOT / "annotations"
+ROOT = Path("/data1/undergraduate/ultralytics")
+SRC_JSON = ROOT / "coco_annotations" / "instances_train_segmented.json"
+SRC_IMG_DIR = ROOT / "stage1_640x640" / "images"
+CSV_PATH = ROOT / "split_record.csv"
+DST_ROOT = ROOT / "dataset_coco"
+DST_IMG = DST_ROOT / "images"
+DST_ANN = DST_ROOT / "annotations"
 
 # ── 1. 读取 CSV，按 split 分组 ─────────────────────────────
 print("[" + "=" * 60)
@@ -53,9 +52,9 @@ print("=" * 60 + "]")
 with open(SRC_JSON) as f:
     coco = json.load(f)
 
-images     = coco["images"]
+images = coco["images"]
 annotations = coco["annotations"]
-categories  = coco["categories"]
+categories = coco["categories"]
 
 # 建立 file_name → image_entry 映射（用于构建 image_id 集合）
 fname_to_img = {im["file_name"]: im for im in images}
@@ -95,9 +94,9 @@ for split in ("test", "train", "val"):
             split_anns.append(ann_copy)
 
     split_coco = {
-        "images":     split_images,
+        "images": split_images,
         "annotations": split_anns,
-        "categories":  categories,
+        "categories": categories,
     }
 
     out_path = DST_ANN / f"{split}.json"
@@ -131,23 +130,23 @@ print("=" * 60 + "]")
 
 all_ok = True
 for split in ("test", "train", "val"):
-    link_dir  = DST_IMG / split
+    link_dir = DST_IMG / split
     json_path = DST_ANN / f"{split}.json"
 
     with open(json_path) as f:
         sc = json.load(f)
 
-    json_fnames  = {im["file_name"] for im in sc["images"]}
-    csv_fnames   = set(split_files[split])
+    json_fnames = {im["file_name"] for im in sc["images"]}
+    csv_fnames = set(split_files[split])
     missing_json = csv_fnames - json_fnames
-    extra_json   = json_fnames - csv_fnames
+    extra_json = json_fnames - csv_fnames
 
-    link_names   = {p.name for p in link_dir.iterdir()}
+    link_names = {p.name for p in link_dir.iterdir()}
     missing_link = csv_fnames - link_names
 
     # 检查 ann 的 image_id 引用完整性
     valid_img_ids = {im["id"] for im in sc["images"]}
-    bad_img_ref   = [a["id"] for a in sc["annotations"] if a["image_id"] not in valid_img_ids]
+    bad_img_ref = [a["id"] for a in sc["annotations"] if a["image_id"] not in valid_img_ids]
 
     # 检查 segmentation 非空
     empty_seg = [a["id"] for a in sc["annotations"] if not a["segmentation"]]
@@ -170,7 +169,7 @@ else:
     print("✗ 存在上述问题，请检查")
 print("=" * 60)
 
-print(f"\n最终目录结构:")
+print("\n最终目录结构:")
 for p in sorted((DST_ROOT).rglob("*")):
     indent = "  " * str(p).count("/")
     if p.is_dir():
