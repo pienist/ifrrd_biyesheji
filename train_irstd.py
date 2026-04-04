@@ -17,8 +17,11 @@ YOLO11-seg 红外小目标分割训练脚本（从头训练版本）
 """
 
 from ultralytics import YOLO
+from datetime import datetime
 
 def main():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # ==========================================
     # 训练配置参数
     # ==========================================
@@ -29,7 +32,7 @@ def main():
         'pretrained': False,                    # 关闭预训练权重
 
         # 数据配置
-        'data': 'dataset.yaml',                 # 数据集配置文件
+        'data': 'dataset.yaml',                 # 数据集配置文件（YOLO格式）
         'task': 'segment',                      # 分割任务
 
         # 训练轮数
@@ -47,8 +50,8 @@ def main():
         'device': [0, 1, 2],                   # 使用GPU 0, 1, 2
 
         # 输出配置
-        'project': 'runs/segment',              # 项目目录
-        'name': 'irstd_yolo11s_seg_scratch',  # 实验名称（区分预训练版本）
+        'project': 'runs',                         # 项目目录（Ultralytics 会自动按 task 子目录）
+        'name': f'irstd_yolo11s_seg_{timestamp}',  # 实验名称（含时间戳）
         'exist_ok': False,                      # 不覆盖已有实验
 
         # 优化器配置 - 从头训练推荐 AdamW
