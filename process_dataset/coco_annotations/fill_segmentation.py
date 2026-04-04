@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 根据 stage1_640x640/masks 中的二值掩膜图像，为 coco_annotations/instances_train.json
-补充 segmentation（多边形坐标）、更新 area 字段。
+补充 segmentation（多边形坐标）、更新 area 字段。.
 
 工作流程：
   1. 遍历每张有标注的图像，从对应掩膜中提取所有前景连通域
@@ -13,7 +13,6 @@
 
 import json
 import os
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -35,13 +34,12 @@ INPLACE = False
 # 辅助函数
 # ============================================================
 
-def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
-    """
-    将二值掩膜转换为 COCO segmentation 列表。
 
-    Returns
-    -------
-    list of (polygon_coords, area)
+def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
+    """将二值掩膜转换为 COCO segmentation 列表。.
+
+    Returns:
+        -------: list of (polygon_coords, area)
         polygon_coords: [x1, y1, x2, y2, ...] (COCO RLE alternative: polygon)
         area: 前景像素数量（等同于 mask 面积）
     """
@@ -63,9 +61,7 @@ def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
             continue
 
         # cv2.findContours 返回 (contours, hierarchy)
-        contours, _ = cv2.findContours(
-            component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for contour in contours:
             n_pts = contour.shape[0]
@@ -74,10 +70,16 @@ def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
             if n_pts < 3:
                 # 超小目标（1-2 像素）：用最小外包矩形模拟一个矩形多边形
                 x, y, w, h = cv2.boundingRect(contour)
-                coords = [float(x), float(y),
-                          float(x + w), float(y),
-                          float(x + w), float(y + h),
-                          float(x), float(y + h)]
+                coords = [
+                    float(x),
+                    float(y),
+                    float(x + w),
+                    float(y),
+                    float(x + w),
+                    float(y + h),
+                    float(x),
+                    float(y + h),
+                ]
                 polygons.append((coords, comp_area))
             else:
                 coords = contour.squeeze().flatten().tolist()
@@ -93,10 +95,7 @@ def mask_to_polygons(mask: np.ndarray) -> list[tuple[list[float], int]]:
 
 
 def compute_bbox_from_polygon(polygon: list[float]) -> tuple[float, float, float, float]:
-    """
-    从 polygon 坐标序列计算 axis-aligned bbox。
-    返回 (x_min, y_min, width, height)，COCO bbox 格式。
-    """
+    """从 polygon 坐标序列计算 axis-aligned bbox。 返回 (x_min, y_min, width, height)，COCO bbox 格式。."""
     xs = polygon[0::2]
     ys = polygon[1::2]
     x_min = min(xs)
@@ -110,10 +109,11 @@ def compute_bbox_from_polygon(polygon: list[float]) -> tuple[float, float, float
 # 主流程
 # ============================================================
 
+
 def main():
     # 1. 加载原始 JSON
     print(f"[1] 加载 {COCO_JSON_PATH} ...")
-    with open(COCO_JSON_PATH, "r") as f:
+    with open(COCO_JSON_PATH) as f:
         coco = json.load(f)
 
     original_images = coco["images"]
@@ -257,10 +257,12 @@ def main():
     for ann in updated_annotations:
         if ann.get("segmentation") and ann["segmentation"]:
             poly = ann["segmentation"][0]
-            print(f"  ann id={ann['id']:5d}  image_id={ann['image_id']:5d}  "
-                  f"bbox={[round(v,1) for v in ann['bbox']]}  "
-                  f"area={ann['area']:7.1f}  "
-                  f"seg_len={len(poly)//2} pts")
+            print(
+                f"  ann id={ann['id']:5d}  image_id={ann['image_id']:5d}  "
+                f"bbox={[round(v, 1) for v in ann['bbox']]}  "
+                f"area={ann['area']:7.1f}  "
+                f"seg_len={len(poly) // 2} pts"
+            )
             count += 1
             if count >= 5:
                 break
