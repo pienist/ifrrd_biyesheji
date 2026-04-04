@@ -21,6 +21,6 @@ names:
 # 数据集信息
 dataset: IRSTD_COCO
 description: Infrared Small Target Detection dataset in COCO format
-image_size: 512
+image_size: 640
 format: yolo_seg  # YOLO 分割格式
 task: segment  # 分割任务
