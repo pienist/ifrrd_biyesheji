@@ -7,10 +7,10 @@
 
 import torch
 import torch.nn as nn
-from typing import List
+from typing import List, Tuple
 
 from .convnext_backbone import ConvNeXtBackboneForYOLO
-from .yolov11_head import YOLOv11Neck, v11Detect
+from .yolov11_head import YOLOv11Neck, v11Detect, v11Segment
 
 
 class YOLOv11WithConvNeXt(nn.Module):
@@ -65,11 +65,109 @@ class YOLOv11WithConvNeXt(nn.Module):
         return predictions
 
 
+class YOLOv11SegWithConvNeXt(nn.Module):
+    """
+    集成 ConvNeXt 骨干网络的 YOLOv11-Seg 分割模型
+    
+    架构：
+        ConvNeXt Backbone → YOLOv11 Neck → YOLOv11 Segment Head
+    
+    支持:
+    - 目标检测
+    - 实例分割
+    
+    官方源码适配:
+    - Backbone: ConvNeXt (models/convnext_backbone.py)
+    - Neck: YOLOv11 PAFPN (models/yolov11_head.py)
+    - Head: v11Segment (models/yolov11_head.py)
+    """
+    
+    def __init__(
+        self,
+        convnext_model_type: str = 'small',
+        num_classes: int = 80,
+        num_masks: int = 32,
+        drop_path_rate: float = 0.1,
+        in_channels: List[int] = None,
+        proto_channels: int = 256
+    ):
+        super().__init__()
+        
+        if in_channels is None:
+            in_channels = [128, 256, 512]
+        
+        self.num_classes = num_classes
+        self.num_masks = num_masks
+        
+        # ConvNeXt 骨干网络
+        self.backbone = ConvNeXtBackboneForYOLO(
+            model_type=convnext_model_type,
+            output_channels=in_channels,
+            drop_path_rate=drop_path_rate
+        )
+        
+        # YOLOv11 Neck (PAFPN)
+        self.neck = YOLOv11Neck(in_channels=in_channels)
+        
+        # YOLOv11 Segmentation Head
+        self.head = v11Segment(
+            nc=num_classes, 
+            nm=num_masks, 
+            npr=proto_channels,
+            ch=in_channels
+        )
+        
+        # 初始化头部偏置
+        self.head.stride = torch.tensor([8, 16, 32])
+        self.head.bias_init()
+    
+    def forward(self, x) -> Tuple[List[torch.Tensor], torch.Tensor]:
+        """
+        前向传播
+        
+        Args:
+            x: 输入图像 (B, 3, H, W)
+        
+        Returns:
+            outputs: 检测和分割输出列表 [(B, nc+nm, H, W), ...]
+            proto: 原型掩码 (B, nm, H*2, W*2)
+        """
+        features = self.backbone(x)
+        features = self.neck(features)
+        outputs, proto = self.head(features)
+        return outputs, proto
+    
+    def decode(self, outputs, proto, mask_threshold: float = 0.5):
+        """
+        解码输出，生成最终的分割掩码
+        
+        Args:
+            outputs: 模型输出
+            proto: 原型掩码
+            mask_threshold: 掩码二值化阈值
+        
+        Returns:
+            分割掩码列表
+        """
+        masks = self.head.decode_outputs(outputs, proto)
+        return [torch.where(m > mask_threshold, 1.0, 0.0) for m in masks]
+
+
 def build_yolov11_convnext(model_type='small', num_classes=80, drop_path_rate=0.1):
     """构建 YOLOv11-ConvNeXt 模型的工厂函数"""
     return YOLOv11WithConvNeXt(
         convnext_model_type=model_type,
         num_classes=num_classes,
+        drop_path_rate=drop_path_rate
+    )
+
+
+def build_yolov11_seg_convnext(model_type='small', num_classes=80, num_masks=32, drop_path_rate=0.1):
+    """构建 YOLOv11-Seg-ConvNeXt 分割模型的工厂函数"""
+    return YOLOv11SegWithConvNeXt(
+        convnext_model_type=model_type,
+        num_classes=num_classes,
+        num_masks=num_masks,
         drop_path_rate=drop_path_rate
     )
 

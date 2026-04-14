@@ -339,3 +339,107 @@ class YOLOv11Neck(nn.Module):
         p5_out = self.c3k2_down2(cat4)
         
         return [p3_out, p4_out, p5_out]
+
+
+# ============================================================================
+# YOLOv11 Segmentation Head (Segmentation = Detection + Mask)
+# ============================================================================
+
+class v11Segment(v11Detect):
+    """
+    YOLOv11 Segmentation Head - 在检测头基础上添加分割功能
+    
+    主要改进:
+    - 添加 cv4 分支: 生成掩码系数
+    - 添加 proto 模块: 生成原型掩码
+    - 推理时使用原型和系数生成最终分割掩码
+    
+    官方源码: ultralytics/nn/modules/head.py
+    """
+    
+    def __init__(self, nc=80, nm=32, npr=256, ch=(128, 256, 512)):
+        """
+        初始化分割头
+        
+        Args:
+            nc (int): 类别数量
+            nm (int): 掩码数量 (mask coefficients)
+            npr (int): 原型数量 (prototypes)
+            ch (tuple): 三个检测层的通道数
+        """
+        super().__init__(nc, ch)
+        self.nm = nm  # 掩码系数数量
+        self.npr = npr  # 原型数量
+        self.no = nc + self.nm  # 输出: 类别 + 掩码系数
+        
+        # 掩码系数分支 cv4 (与 cv2, cv3 并行)
+        c4 = max((self.nm * ch[0]) // 256, self.nm)
+        self.cv4 = nn.ModuleList()
+        
+        for i, c in enumerate(ch):
+            self.cv4.append(nn.Sequential(
+                Conv(c, c4, 3),
+                Conv(c4, c4, 3),
+                nn.Conv2d(c4, self.nm, 1)
+            ))
+        
+        # 原型生成模块
+        self.proto = nn.Sequential(
+            Conv(ch[0], npr, 3),
+            Conv(npr, npr, 3),
+            Conv(npr, npr, 3),
+            nn.Upsample(scale_factor=2, mode='nearest'),
+            Conv(npr, npr, 3),
+            Conv(npr, npr, 3),
+            Conv(npr, self.nm, 3)
+        )
+    
+    def forward(self, x):
+        """
+        前向传播
+        
+        Args:
+            x: 三个尺度的特征图列表 [P3, P4, P5]
+        
+        Returns:
+            检测输出和分割输出
+            - 检测: 列表，每个元素是 (B, nc+nm, H, W)
+            - 分割原型: (B, nm, H*2, W*2)
+        """
+        # 生成原型掩码
+        proto = self.proto(x[0])
+        
+        # 生成检测输出和掩码系数
+        outputs = []
+        for i in range(self.nl):
+            # 掩码系数
+            mask_coef = self.cv4[i](x[i])
+            # 检测 (box + cls)
+            box = self.cv2[i](x[i])
+            cls = self.cv3[i](x[i])
+            # 合并
+            outputs.append(torch.cat([box, cls, mask_coef], dim=1))
+        
+        return outputs, proto
+    
+    def decode_outputs(self, outputs, proto):
+        """
+        解码输出，生成最终的分割掩码
+        
+        Args:
+            outputs: 模型输出的检测列表
+            proto: 原型掩码 (B, nm, H, W)
+        
+        Returns:
+            分割掩码列表
+        """
+        masks = []
+        for i, output in enumerate(outputs):
+            # 提取掩码系数 (最后 nm 个通道)
+            mask_coef = output[:, -self.nm:, :, :]
+            # 上采样原型到输出尺寸
+            proto_up = F.interpolate(proto, size=output.shape[-2:], mode='bilinear', align_corners=False)
+            # 矩阵乘法生成掩码: (B, H, W, nm) @ (B, nm, H, W) -> (B, H, W)
+            mask = torch.sigmoid(torch.einsum('bnhw,bchw->bhwc', proto_up, mask_coef))
+            masks.append(mask.permute(0, 3, 1, 2))  # (B, nm, H, W) -> (B, H, W, nm) -> (B, nm, H, W)
+        return masks
