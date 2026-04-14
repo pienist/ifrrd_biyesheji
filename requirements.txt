@@ -1,0 +1,34 @@
+# YOLOv11-ConvNeXt Requirements
+
+# Core dependencies
+torch>=1.10.0
+torchvision>=0.11.0
+numpy>=1.19.0
+opencv-python>=4.5.0
+pillow>=8.0.0
+matplotlib>=3.3.0
+scipy>=1.6.0
+
+# Configuration
+pyyaml>=5.4.0
+tqdm>=4.62.0
+
+# Logging
+logging (built-in)
+
+# Data loading
+pandas>=1.3.0
+seaborn>=0.11.0
+
+# Deployment
+onnx>=1.10.0
+onnxruntime>=1.8.0
+flask>=2.0.0
+
+# Testing
+pytest>=6.2.0
+pytest-cov>=3.0.0
+
+# Utilities
+pathlib (built-in)
+collections (built-in)

@@ -1,0 +1,39 @@
+# YOLOv11-ConvNeXt Tiny Model Configuration
+
+model:
+  type: yolov11-convnext
+  size: tiny
+  
+  backbone:
+    type: convnext_tiny
+    depths: [3, 3, 9, 3]
+    dims: [96, 192, 384, 768]
+    drop_path_rate: 0.1
+    
+  head:
+    num_classes: 80
+    anchors: 3
+    
+  neck:
+    type: pafpn
+    channels: [96, 192, 384, 768]
+    
+training:
+  batch_size: 16
+  epochs: 300
+  optimizer: adamw
+  learning_rate: 0.001
+  weight_decay: 0.05
+  warmup_epochs: 3
+  
+augmentation:
+  mosaic: 1.0
+  mixup: 0.1
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  
+data:
+  img_size: 640
+  cache_images: false
+  workers: 8
