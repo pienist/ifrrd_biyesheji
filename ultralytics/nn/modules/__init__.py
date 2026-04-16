@@ -76,6 +76,7 @@ from .conv import (
     RepConv,
     SpatialAttention,
 )
+from .convnext import ConvNeXt, ConvNeXtStage
 from .head import (
     OBB,
     OBB26,
@@ -115,6 +116,8 @@ __all__ = (
     "C3TR",
     "CBAM",
     "CIB",
+    "ConvNeXt",
+    "ConvNeXtStage",
     "DFL",
     "ELAN1",
     "MLP",

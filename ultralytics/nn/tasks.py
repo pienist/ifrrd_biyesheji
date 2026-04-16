@@ -43,6 +43,8 @@ from ultralytics.nn.modules import (
     Concat,
     Conv,
     Conv2,
+    ConvNeXt,
+    ConvNeXtStage,
     ConvTranspose,
     Detect,
     DWConv,
@@ -1674,6 +1676,11 @@ def parse_model(d, ch, verbose=True):
                 n = 1
         elif m is ResNetLayer:
             c2 = args[1] if args[3] else args[1] * 4
+        elif m is ConvNeXtStage:
+            c1 = ch[f]  # 输入通道数
+            c2 = args[0]  # 输出通道数
+            # 构建 [in_channels, out_channels, depth, drop_path_rate] 参数
+            args = [c1, c2, *args[1:]]
         elif m is torch.nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:

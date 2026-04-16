@@ -1,0 +1,42 @@
+# Ultralytics ConvNeXt-Seg 配置文件
+# ConvNeXt backbone + YOLO Segmentation Head
+
+nc: 80
+scales:
+  n: [0.33, 0.25, 1024]
+  s: [0.33, 0.5, 1024]
+  m: [0.67, 0.75, 768]
+  l: [1.0, 1.0, 512]
+  x: [1.0, 1.25, 512]
+
+backbone:
+  # ConvNeXt Stem: 4x4 conv, stride=4 -> 输出 H/4, W/4
+  - [-1, 1, Conv, [64, 4, 4]]  # 0 stem
+  # ConvNeXt Stages: 每个 Stage 会做 H,W 减半
+  - [-1, 1, ConvNeXtStage, [128, 3, 0.0]]  # 1 stride 8
+  - [-1, 1, ConvNeXtStage, [256, 3, 0.0]]  # 2 stride 16
+  - [-1, 1, ConvNeXtStage, [512, 3, 0.0]]  # 3 stride 32
+  - [-1, 1, ConvNeXtStage, [1024, 3, 0.0]] # 4 stride 64
+  # P3/P4/P5 输出（从 stage1/2/3 引出）
+  - [1, 1, Conv, [256, 1, 1]]  # 5 P3/8
+  - [2, 1, Conv, [512, 1, 1]]  # 6 P4/16
+  - [3, 1, Conv, [1024, 1, 1]] # 7 P5/32
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 8 上采样 P4/16 -> P3/8
+  - [[6, 8], 1, Concat, [1]]  # 9 拼接 P3 + 上采样的 P4
+  - [-1, 2, C2f, [512]]  # 10
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 11 上采样 P4 -> P3
+  - [[5, 11], 1, Concat, [1]]  # 12 拼接 P3 + 上采样的 P4
+  - [-1, 2, C2f, [256]]  # 13
+
+  - [-1, 1, Conv, [256, 3, 2]]  # 14 下采样 P3 -> P4
+  - [[14, 10], 1, Concat, [1]]  # 15 拼接 P4 + 上采样的 P3
+  - [-1, 2, C2f, [512]]  # 16
+
+  - [-1, 1, Conv, [512, 3, 2]]  # 17 下采样 P4 -> P5
+  - [[17, 7], 1, Concat, [1]]  # 18 拼接 P5 + 下采样的 P4
+  - [-1, 2, C2f, [1024]]  # 19
+
+  - [[13, 16, 19], 1, Segment, [nc, 32, 256]]  # 20
