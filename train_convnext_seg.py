@@ -259,7 +259,7 @@ def main():
         # 优化器配置
         "optimizer": "AdamW",  # ConvNeXt 推荐使用 AdamW
         "lr0": 0.001,  # 初始学习率（阶段1: Neck+Head 快速收敛）
-        "lrf": 0.1,  # 最终学习率比例（阶段1: 0.001→0.0001；阶段2: 0.0001→0.00001）
+        "lrf": 0.1,  # 最终学习率比例（阶段1: 0.001→0.0001；阶段2: 0.0005→0.00005）
         "weight_decay": 0.05,  # ConvNeXt 常用权重衰减
         # 学习率调度
         "cos_lr": True,  # 余弦退火学习率
@@ -318,7 +318,7 @@ def main():
         print("=" * 60)
         print("\n📊 学习率策略:")
         print("  阶段1 (冻结): lr0=0.001, lrf=0.1  →  Neck+Head 快速收敛")
-        print("  阶段2 (微调): lr0=0.0001, lrf=0.1 →  Backbone 温和调整")
+        print("  阶段2 (微调): lr0=0.0005, lrf=0.1 →  Backbone 温和调整")
         print("  (阶段2学习率为阶段1的 1/10，保护预训练权重)")
 
         # ========== 阶段 1: 冻结训练 ==========
@@ -355,7 +355,7 @@ def main():
         print("\n" + "=" * 60)
         print("阶段 2: 解冻全部参数，微调训练")
         print("=" * 60)
-        print(f"学习率: lr0={config['lr0'] * 0.1}, lrf={config.get('lrf', 0.1)} (backbone 使用 1/10 学习率)")
+        print(f"学习率: lr0=0.0005, lrf={config.get('lrf', 0.1)} (backbone 使用 5e-4 学习率)")
 
         # 阶段2配置
         stage2_config = config.copy()
@@ -364,8 +364,8 @@ def main():
         stage2_config["exist_ok"] = False
         stage2_config.pop("pretrained_path", None)  # 不再需要预训练权重
         # 阶段2使用较低的学习率（微调已训练好的 backbone）
-        stage2_config["lr0"] = config["lr0"] * 0.1  # 0.0001
-        stage2_config["lrf"] = 0.1  # 最终 lr = 0.0001 * 0.1 = 0.00001
+        stage2_config["lrf"] = 0.1  # 最终 lr = 0.0005 * 0.1 = 0.00005
+        stage2_config["lr0"] = 0.0005  # 解冻阶段使用 5e-4
 
         # 从阶段1加载权重
         if os.path.exists(stage1_weights):
