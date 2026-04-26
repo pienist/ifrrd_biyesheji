@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-__all__ = ("ConvNeXt", "ConvNeXtStage", "ConvNeXtBackbone")
+__all__ = ("ConvNeXt", "ConvNeXtStage", "ConvNeXtBackbone", "ChannelAdapter")
 
 
 class ConvNeXtBlock(nn.Module):
@@ -271,6 +271,41 @@ class ConvNeXtAdapter(nn.Module):
             adapted_features: 适配后的特征列表
         """
         return [adapter(feat) for adapter, feat in zip(self.adapters, features)]
+
+
+class ChannelAdapter(nn.Module):
+    """1通道 → 3通道适配器
+
+    将红外单通道图像投影到3通道，适配ImageNet预训练权重。
+
+    参数格式: [out_channels]
+    由 parse_model 自动从 YAML 配置解析后传递。
+    """
+
+    def __init__(self, out_channels=3):
+        """初始化通道适配器。
+
+        Args:
+            out_channels: 输出通道数（默认3，用于适配ImageNet预训练权重）
+        """
+        super().__init__()
+        self.out_channels = out_channels
+
+        # 1×1卷积: 1通道 → 3通道
+        self.proj = nn.Conv2d(1, out_channels, kernel_size=1, bias=False)
+
+    def init_from_imagenet(self, weight_3ch):
+        """使用ImageNet 3通道权重的均值初始化适配器。
+
+        Args:
+            weight_3ch: ImageNet预训练权重 [C_out, 3, H, W]
+        """
+        weight_mean = weight_3ch.mean(dim=1, keepdim=True)  # [C_out, 1, H, W]
+        self.proj.weight.data = weight_mean
+
+    def forward(self, x):
+        """前向传播: [B, 1, H, W] → [B, 3, H, W]"""
+        return self.proj(x)
 
 
 def convnext_base(pretrained: str = None, **kwargs):

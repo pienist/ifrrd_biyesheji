@@ -247,7 +247,9 @@ class Model(torch.nn.Module):
         cfg_dict = yaml_model_load(cfg)
         self.cfg = cfg
         self.task = task or guess_model_task(cfg_dict)
-        self.model = (model or self._smart_load("model"))(cfg_dict, verbose=verbose and RANK == -1)  # build model
+        # Use ch from YAML if present, otherwise default to 3
+        ch = cfg_dict.get("ch", cfg_dict.get("channels", 3))
+        self.model = (model or self._smart_load("model"))(cfg_dict, ch=ch, verbose=verbose and RANK == -1)  # build model
         self.overrides["model"] = self.cfg
         self.overrides["task"] = self.task
 

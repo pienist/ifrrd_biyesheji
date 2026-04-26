@@ -45,6 +45,7 @@ from ultralytics.nn.modules import (
     Conv2,
     ConvNeXt,
     ConvNeXtStage,
+    ChannelAdapter,
     ConvTranspose,
     Detect,
     DWConv,
@@ -1681,6 +1682,11 @@ def parse_model(d, ch, verbose=True):
             c2 = args[0]  # 输出通道数
             # 构建 [in_channels, out_channels, depth, drop_path_rate] 参数
             args = [c1, c2, *args[1:]]
+        elif m is ChannelAdapter:
+            # 通道适配器: 1通道 → 3通道
+            c1 = ch[f]  # 输入通道数（红外单通道=1）
+            c2 = args[0] if args else 3  # 输出通道数（默认3）
+            args = [c2]
         elif m is torch.nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:

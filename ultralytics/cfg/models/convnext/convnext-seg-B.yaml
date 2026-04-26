@@ -1,0 +1,40 @@
+# ConvNeXt-Seg-B: 通道适配器版本
+# 在backbone之前添加1→3通道适配器
+
+nc: 80
+ch: 1  # 输入通道数: 1 (灰度图)
+
+backbone:
+  # 通道适配器 (实验B新增): 1×1卷积 1通道 → 3通道
+  - [-1, 1, ChannelAdapter, [3]]  # 0: 通道适配器 [1, H, W] → [3, H, W]
+  # ConvNeXt Stem: 4x4 conv, stride=4 -> 输出 H/4, W/4
+  - [-1, 1, Conv, [64, 4, 4]]  # 1 stem
+  # ConvNeXt Stages: 每个 Stage 会做 H,W 减半
+  # 注意: ConvNeXt-Base 的预训练权重中 Stage 2 有 27 个 blocks！
+  - [-1, 1, ConvNeXtStage, [128, 3, 0.0]]  # 2 stride 8
+  - [-1, 1, ConvNeXtStage, [256, 3, 0.0]]  # 3 stride 16
+  - [-1, 1, ConvNeXtStage, [512, 27, 0.0]]  # 4 stride 32 (27 blocks 匹配预训练权重!)
+  - [-1, 1, ConvNeXtStage, [1024, 3, 0.0]] # 5 stride 64
+  # P3/P4/P5 输出（从 stage1/2/3 引出）
+  - [2, 1, Conv, [256, 1, 1]]  # 6 P3/8
+  - [3, 1, Conv, [512, 1, 1]]  # 7 P4/16
+  - [4, 1, Conv, [1024, 1, 1]] # 8 P5/32
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 9 上采样 P4/16 -> P3/8
+  - [[7, 9], 1, Concat, [1]]  # 10 拼接 P3 + 上采样的 P4
+  - [-1, 2, C2f, [512]]  # 11
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 12 上采样 P4 -> P3
+  - [[6, 12], 1, Concat, [1]]  # 13 拼接 P3 + 上采样的 P4
+  - [-1, 2, C2f, [256]]  # 14
+
+  - [-1, 1, Conv, [256, 3, 2]]  # 15 下采样 P3 -> P4
+  - [[15, 11], 1, Concat, [1]]  # 16 拼接 P4 + 上采样的 P3
+  - [-1, 2, C2f, [512]]  # 17
+
+  - [-1, 1, Conv, [512, 3, 2]]  # 18 下采样 P4 -> P5
+  - [[18, 8], 1, Concat, [1]]  # 19 拼接 P5 + 下采样的 P4
+  - [-1, 2, C2f, [1024]]  # 20
+
+  - [[14, 17, 20], 1, Segment, [nc, 32, 256]]  # 21

@@ -527,7 +527,7 @@ class v8SegmentationLoss(v8DetectionLoss):
                         sem_masks[i, :, instance_mask_i.sum(dim=0) == 0] = 0
 
                 loss[4] = self.bcedice_loss(pred_semseg, sem_masks)
-                loss[4] *= self.hyp.box  # seg gain
+                loss[4] *= self.hyp.seg  # semseg gain
 
         # WARNING: lines below prevent Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
         else:
@@ -535,7 +535,7 @@ class v8SegmentationLoss(v8DetectionLoss):
             if pred_semseg is not None:
                 loss[4] += (pred_semseg * 0).sum()
 
-        loss[1] *= self.hyp.box  # seg gain
+        loss[1] *= self.hyp.seg  # seg gain
         return loss * batch_size, loss.detach()  # loss(box, seg, cls, dfl, semseg)
 
     @staticmethod

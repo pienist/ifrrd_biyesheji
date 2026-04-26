@@ -1,0 +1,28 @@
+# IRSTD (Infrared Small Target Detection) COCO Dataset Configuration
+# 用于 YOLOv11-seg 红外小目标分割训练 (实验B: 1通道输入 + ChannelAdapter)
+
+# 数据集路径 (相对于项目根目录 /data1/undergraduate/ultralytics)
+path: dataset # YOLO 格式数据集根目录
+train: images/train # 训练图像路径
+val: images/val # 验证图像路径
+test: images/test # 测试图像路径
+
+# YOLO 格式标签路径（相对于 path）
+# 注意：YOLO 自动在 path/labels 目录查找标签
+
+# 通道数: 1 (灰度) - 实验B使用单通道输入，由 ChannelAdapter 转换为 3 通道
+channels: 1
+
+# 类别数量
+nc: 1 # 红外小目标分割 - 1 个类别
+
+# 类别名称
+names:
+  0: infrared_small_target # 红外小目标
+
+# 数据集信息
+dataset: IRSTD_COCO
+description: "Infrared Small Target Detection dataset in COCO format (Experiment B: 1-channel input)"
+image_size: 640
+format: yolo_seg # YOLO 分割格式
+task: segment # 分割任务

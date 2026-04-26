@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-ConvNeXt-Seg 红外小目标分割训练脚本
+ConvNeXt-Seg 红外小目标分割训练脚本 - 实验B
 =============================================
-使用 ConvNeXt 作为 Backbone + YOLOv11-seg Head
+在 Baseline 基础上增加通道适配器 (Channel Adapter)
+
+核心改进:
+- 添加 1→3 通道适配器，将红外单通道转换为3通道
+- 使用 ImageNet 权重均值初始化适配器
+- 适配器可学习，允许微调适应红外特征
 
 使用方法:
     conda activate yolov11_seg
-    python train_convnext_seg.py
+    python train_convnext_seg_B.py
 
 两阶段训练（冻结 + 解冻）:
-    # 阶段1: 冻结 backbone 训练 50 epochs
-    python train_convnext_seg.py --epochs 50 --batch 8 --device 0 --freeze 5
-
-    # 阶段2: 解冻全部训练 150 epochs (自动从阶段1继续)
-    python train_convnext_seg.py --epochs 150 --batch 8 --device 0 --freeze 0
-
-自动两阶段训练（一次性完成）:
-    python train_convnext_seg.py --epochs 200 --batch 8 --device 0 --freeze 5 --freeze_epochs 50
+    python train_convnext_seg_B.py --epochs 120 --batch 24 --device 0 --freeze 5 --freeze_epochs 30
 """
 
 import os
@@ -26,7 +24,12 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 from ultralytics import YOLO
+from ultralytics.nn.modules import ChannelAdapter
 
+
+# ==========================================
+# 修改后的权重加载函数（支持通道适配器）
+# ==========================================
 
 def load_convnext_pretrained(model, pretrained_path):
     """加载 ConvNeXt ImageNet-22k 预训练权重到 YOLO 模型。
@@ -50,39 +53,33 @@ def load_convnext_pretrained(model, pretrained_path):
     # 打印原始权重信息
     print(f"预训练权重总层数: {len(state_dict)}")
 
-    # 预训练权重的结构 (timm 格式):
-    # stem.0.weight, stem.0.bias              - 初始卷积 (Conv2d)
-    # stem.1.weight, stem.1.bias             - LayerNorm
-    # stages.{0,1,2,3}.downsample.0.*        - 下采样层
-    # stages.{0,1,2,3}.blocks.{i}.*         - ConvNeXt blocks
-    #   - conv_dw.weight/bias                 - 深度可分离卷积
-    #   - norm.weight/bias                   - LayerNorm
-    #   - mlp.fc1.weight/bias                 - MLP 第一层
-    #   - mlp.fc2.weight/bias                 - MLP 第二层
-    #   - gamma                               - Layer scale
+    # 获取第一个卷积层的权重（用于初始化通道适配器）
+    first_conv_weight = None
+    for key, value in state_dict.items():
+        if 'stem.0.weight' in key:
+            first_conv_weight = value
+            print(f"  找到第一层卷积权重: {key}, shape={value.shape}")
+            break
 
-    # YOLO 模型结构 (ConvNeXt-seg.yaml):
-    # model.0: Conv (stem, 替换了原始的 LayerNorm stem)
-    # model.1: ConvNeXtStage (128 channels, depth=3)
-    # model.2: ConvNeXtStage (256 channels, depth=3)
-    # model.3: ConvNeXtStage (512 channels, depth=3)
-    # model.4: ConvNeXtStage (1024 channels, depth=3)
-
-    # 键名映射规则:
-    # 预训练: stages.{0,1,2,3} -> YOLO: model.{1,2,3,4}
-    # mlp.fc1 -> pwconv1, mlp.fc2 -> pwconv2
-    # conv_dw -> dwconv
+    # 初始化通道适配器（model.model[0] 是 ChannelAdapter）
+    channel_adapter = None
+    if hasattr(model.model, '0') and isinstance(model.model[0], ChannelAdapter):
+        channel_adapter = model.model[0]
+        if first_conv_weight is not None:
+            channel_adapter.init_from_imagenet(first_conv_weight)
+            print("  通道适配器初始化完成!")
 
     new_state_dict = {}
     loaded_count = 0
     skipped_count = 0
 
     # 预训练 stage 索引到 YOLO model 索引的映射
+    # 注意: 实验B的模型在backbone之前有ChannelAdapter，所以索引需要+1
     stage_mapping = {
-        0: 1,  # stages.0 -> model.1
-        1: 2,  # stages.1 -> model.2
-        2: 3,  # stages.2 -> model.3
-        3: 4,  # stages.3 -> model.4
+        0: 2,  # stages.0 -> model.2 (model.0是ChannelAdapter, model.1是stem)
+        1: 3,  # stages.1 -> model.3
+        2: 4,  # stages.2 -> model.4
+        3: 5,  # stages.3 -> model.5
     }
 
     # 获取模型所有键（用于验证）
@@ -100,7 +97,6 @@ def load_convnext_pretrained(model, pretrained_path):
             continue
 
         # 跳过预训练权重中的 LayerNorm 层（downsample.0 是 LayerNorm）
-        # YOLO 模型只有 Conv2d，不需要这些
         if '.downsample.0.' in key:
             skipped_count += 1
             continue
@@ -116,7 +112,7 @@ def load_convnext_pretrained(model, pretrained_path):
 
                 if stage_idx in stage_mapping and block_type == 'blocks':
                     model_idx = stage_mapping[stage_idx]
-                    # 重新构建: stages.0.blocks.0.dwconv.weight -> model.1.blocks.0.dwconv.weight
+                    # 重新构建: stages.0.blocks.0.dwconv.weight -> model.2.blocks.0.dwconv.weight
                     new_key = 'model.' + str(model_idx) + '.' + '.'.join(parts[2:])
 
                     # 替换键名格式 (timm -> YOLO)
@@ -171,8 +167,14 @@ def freeze_layers(model, n_freeze):
         model: YOLO 模型
         n_freeze: 要冻结的层数，0 表示全部解冻
     """
+    # ChannelAdapter (model.0) 始终保持可训练
+    if hasattr(model.model, '0') and isinstance(model.model[0], ChannelAdapter):
+        for param in model.model[0].parameters():
+            param.requires_grad = True
+        print("  通道适配器始终保持可训练状态")
+
     if n_freeze == 0:
-        print("解冻所有层")
+        print("解冻所有层（包括backbone）")
         for param in model.model.parameters():
             param.requires_grad = True
         return
@@ -218,12 +220,12 @@ def main():
     # ==========================================
     # 命令行参数解析
     # ==========================================
-    parser = argparse.ArgumentParser(description="ConvNeXt-Seg 训练脚本")
-    parser.add_argument("--epochs", type=int, default=200, help="总训练轮数")
-    parser.add_argument("--batch", type=int, default=16, help="Batch size")
+    parser = argparse.ArgumentParser(description="ConvNeXt-Seg 实验B: 通道适配器训练脚本")
+    parser.add_argument("--epochs", type=int, default=120, help="总训练轮数")
+    parser.add_argument("--batch", type=int, default=24, help="Batch size")
     parser.add_argument("--device", type=str, default="0", help="GPU 设备")
     parser.add_argument("--freeze", type=int, default=5, help="冻结前 N 层 (0=全部解冻)")
-    parser.add_argument("--freeze_epochs", type=int, default=50, help="冻结阶段的 epoch 数")
+    parser.add_argument("--freeze_epochs", type=int, default=30, help="冻结阶段的 epoch 数")
     parser.add_argument("--name", type=str, default=None, help="实验名称")
     parser.add_argument("--weights", type=str, default=None, help="预训练权重路径")
     parser.add_argument("--resume", type=str, default=None, help="从检查点恢复")
@@ -231,71 +233,94 @@ def main():
     cmd_args = parser.parse_args()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = cmd_args.name or f"convnext_seg_{timestamp}"
+    base_name = cmd_args.name or f"B_channel_adapter_{timestamp}"
+
+    # ==========================================
+    # 实验B配置说明
+    # ==========================================
+    print("=" * 60)
+    print("实验B: 通道适配器 (Channel Adapter)")
+    print("=" * 60)
+    print("""
+核心改进:
+- 添加 1→3 通道适配器，将红外单通道转换为3通道
+- 使用 ImageNet 权重均值初始化适配器
+- 适配器可学习，允许微调适应红外特征
+
+原理:
+- ImageNet预训练权重基于3通道RGB图像
+- 红外图像是单通道灰度图
+- 使用1×1卷积进行通道投影
+- 初始化: weight_1ch = mean(weight_3ch, dim=1)
+
+配置:
+- 阶段1 (冻结): 30 epochs, lr0=0.001 (Batch 24)
+- 阶段2 (解冻): 90 epochs, lr0=0.0005 (Batch 24)
+    """)
 
     # ==========================================
     # 训练配置参数
     # ==========================================
     config = {
-        # 模型配置 - ConvNeXt-Seg (使用 YAML 配置)
-        "model": "ultralytics/cfg/models/convnext/convnext-seg.yaml",
+        # 模型配置 - ConvNeXt-Seg with Channel Adapter
+        "model": "ultralytics/cfg/models/convnext/convnext-seg-B.yaml",
         # 预训练权重路径
-        "pretrained_path": "convnext_base_in22k_ft_in1k.pth",  # ImageNet-22k 预训练权重
+        "pretrained_path": "convnext_base_in22k_ft_in1k.pth",
         # 数据配置
-        "data": "dataset.yaml",  # 数据集配置文件（YOLO格式）
-        "task": "segment",  # 分割任务
+        "data": "dataset_B.yaml",
+        "task": "segment",
         # 训练轮数
         "epochs": cmd_args.epochs,
         # Batch size 设置
         "batch": cmd_args.batch,
-        # 图像尺寸 - 红外小目标数据集原始图像尺寸为 640x640
+        # 图像尺寸
         "imgsz": 640,
         # 设备配置
         "device": cmd_args.device,
         # 输出配置
-        "project": "runs",  # 项目目录
-        "name": base_name,  # 实验名称（含时间戳）
-        "exist_ok": False,  # 不覆盖已有实验
+        "project": "runs",
+        "name": base_name,
+        "exist_ok": False,
         # 优化器配置
-        "optimizer": "AdamW",  # ConvNeXt 推荐使用 AdamW
-        "lr0": 0.001,  # 初始学习率（阶段1: Neck+Head 快速收敛）
-        "lrf": 0.1,  # 最终学习率比例（阶段1: 0.001→0.0001；阶段2: 0.0005→0.00005）
-        "weight_decay": 0.05,  # ConvNeXt 常用权重衰减
+        "optimizer": "AdamW",
+        "lr0": 0.001,  # Batch 24 调整
+        "lrf": 0.1,
+        "weight_decay": 0.05,
         # 学习率调度
-        "cos_lr": True,  # 余弦退火学习率
-        "warmup_epochs": 3.0,  # 预热 3 epoch
+        "cos_lr": True,
+        "warmup_epochs": 3.0,
         "warmup_momentum": 0.8,
         "warmup_bias_lr": 0.1,
-        # 数据增强 - 红外小目标适度增强
-        "hsv_h": 0.015,  # 色调增强
-        "hsv_s": 0.7,  # 饱和度增强
-        "hsv_v": 0.4,  # 亮度增强（红外图像主要依赖亮度）
-        "degrees": 0.0,  # 不旋转（红外目标方向敏感）
-        "translate": 0.1,  # 平移
-        "scale": 0.5,  # 缩放
-        "shear": 0.0,  # 不剪切
-        "perspective": 0.0,  # 不透视
-        "flipud": 0.0,  # 不上下翻转（方向敏感）
-        "fliplr": 0.5,  # 左右翻转
-        "mosaic": 1.0,  # Mosaic 增强（适合小目标）
-        "mixup": 0.0,  # 不使用 MixUp
-        "copy_paste": 0.0,  # 不使用 Copy-paste
+        # 数据增强
+        "hsv_h": 0.015,
+        "hsv_s": 0.7,
+        "hsv_v": 0.4,
+        "degrees": 0.0,
+        "translate": 0.1,
+        "scale": 0.5,
+        "shear": 0.0,
+        "perspective": 0.0,
+        "flipud": 0.0,
+        "fliplr": 0.5,
+        "mosaic": 1.0,
+        "mixup": 0.0,
+        "copy_paste": 0.0,
         # 分割任务特定参数
-        "overlap_mask": True,  # 训练时合并实例 mask
-        "mask_ratio": 4,  # mask 下采样比例
+        "overlap_mask": True,
+        "mask_ratio": 4,
         # 其他设置
-        "save": True,  # 保存检查点和预测结果
-        "save_period": 20,  # 每 20 epoch 保存一次
-        "cache": False,  # 不缓存图像到内存
-        "workers": 8,  # 数据加载线程数
-        "verbose": True,  # 打印详细日志
-        "seed": 0,  # 随机种子
-        "deterministic": True,  # 确定性操作
-        "amp": True,  # AMP 混合精度训练
+        "save": True,
+        "save_period": 20,
+        "cache": False,
+        "workers": 8,
+        "verbose": True,
+        "seed": 0,
+        "deterministic": True,
+        "amp": True,
         # 验证设置
-        "val": True,  # 训练时验证
-        "plots": True,  # 生成训练曲线图
-        "iou": 0.5,  # NMS IoU 阈值
+        "val": True,
+        "plots": True,
+        "iou": 0.5,
         # 冻结层数
         "freeze": cmd_args.freeze,
     }
@@ -311,15 +336,15 @@ def main():
     use_two_stage = (freeze_epochs > 0) and (total_epochs > freeze_epochs) and (cmd_args.freeze > 0) and (not resume_path)
 
     if use_two_stage:
-        print("=" * 60)
+        print("\n" + "=" * 60)
         print("检测到两阶段训练模式")
         print(f"阶段 1: 冻结 {cmd_args.freeze} 层, 训练 {freeze_epochs} epochs")
         print(f"阶段 2: 解冻全部, 训练 {total_epochs - freeze_epochs} epochs")
         print("=" * 60)
-        print("\n📊 学习率策略:")
+        print("\n📊 学习率策略 (Batch 24):")
         print("  阶段1 (冻结): lr0=0.001, lrf=0.1  →  Neck+Head 快速收敛")
         print("  阶段2 (微调): lr0=0.0005, lrf=0.1 →  Backbone 温和调整")
-        print("  (阶段2学习率为阶段1的 1/10，保护预训练权重)")
+        print("  (阶段2学习率为阶段1的 1/2，保护预训练权重)")
 
         # ========== 阶段 1: 冻结训练 ==========
         print("\n" + "=" * 60)
@@ -332,9 +357,8 @@ def main():
         stage1_config["epochs"] = freeze_epochs
         stage1_config["name"] = base_name + "_freeze"
         stage1_config["exist_ok"] = False
-        # 阶段1使用较高的学习率（neck+head 随机初始化，需要快速收敛）
-        stage1_config["lr0"] = 0.001
-        stage1_config["lrf"] = 0.1  # 最终 lr = 0.001 * 0.1 = 0.0001
+        stage1_config["lr0"] = 0.001  # Batch 24 调整
+        stage1_config["lrf"] = 0.1
 
         # 加载模型
         model = YOLO(config["model"])
@@ -349,7 +373,6 @@ def main():
 
         # 获取阶段1最佳权重
         # ultralytics 路径规则: runs/segment/runs/{name}/weights/best.pt
-        # 实际保存路径: project="runs", task="segment", name="xxx_freeze" -> runs/segment/runs/xxx_freeze/weights/best.pt
         stage1_weights = f"runs/segment/runs/{stage1_config['name']}/weights/best.pt"
         print(f"\n阶段 1 完成! 权重保存于: {stage1_weights}")
 
@@ -364,10 +387,9 @@ def main():
         stage2_config["epochs"] = total_epochs - freeze_epochs
         stage2_config["name"] = base_name + "_finetune"
         stage2_config["exist_ok"] = False
-        stage2_config.pop("pretrained_path", None)  # 不再需要预训练权重
-        # 阶段2使用较低的学习率（微调已训练好的 backbone）
-        stage2_config["lrf"] = 0.1  # 最终 lr = 0.0005 * 0.1 = 0.00005
-        stage2_config["lr0"] = 0.0005  # 解冻阶段使用 5e-4
+        stage2_config.pop("pretrained_path", None)
+        stage2_config["lrf"] = 0.1
+        stage2_config["lr0"] = 0.0005  # Batch 24 调整
 
         # 从阶段1加载权重
         if os.path.exists(stage1_weights):
@@ -397,7 +419,7 @@ def main():
         # 单阶段训练（普通模式）
         # ==========================================
         print("=" * 60)
-        print("ConvNeXt-Seg 红外小目标分割训练")
+        print("ConvNeXt-Seg 实验B: 通道适配器训练")
         print("=" * 60)
         print(f"模型: {config['model']}")
         print(f"数据集: {config['data']}")
@@ -420,7 +442,7 @@ def main():
 
         model = YOLO(config["model"])
 
-        # 加载 ConvNeXt ImageNet-22k 预训练权重（仅在非 resume 模式下）
+        # 加载 ConvNeXt ImageNet-22k 预训练权重
         if not resume_path and not cmd_args.weights:
             if pretrained_path and os.path.exists(pretrained_path):
                 model = load_convnext_pretrained(model, pretrained_path)
