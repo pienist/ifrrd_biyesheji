@@ -69,12 +69,12 @@ def main():
         "perspective": 0.0,  # 不透视
         "flipud": 0.0,  # 不上下翻转（方向敏感）
         "fliplr": 0.5,  # 左右翻转
-        "mosaic": 1.0,  # Mosaic 增强（适合小目标）
+        "mosaic": 0.0,  # 禁用 Mosaic 增强
         "mixup": 0.0,  # 不使用 MixUp
         "copy_paste": 0.0,  # 不使用 Copy-paste
         # 分割任务特定参数
         "overlap_mask": True,  # 训练时合并实例 mask
-        "mask_ratio": 4,  # mask 下采样比例
+        "mask_ratio": 1,  # mask 不下采样
         # 其他设置
         "save": True,  # 保存检查点和预测结果
         "save_period": 20,  # 每 20 epoch 保存一次

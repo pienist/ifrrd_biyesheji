@@ -18,13 +18,95 @@ ConvNeXt-Seg 红外小目标分割训练脚本 - 实验B
 """
 
 import os
+import sys
 import argparse
+import logging
 from datetime import datetime
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 from ultralytics import YOLO
-from ultralytics.nn.modules import ChannelAdapter
+
+# ==========================================
+# 日志配置：同时输出到终端和文件
+# ==========================================
+def setup_logging(log_dir="runs/segment", log_name=None):
+    """配置日志，同时输出到控制台和文件。
+    
+    Args:
+        log_dir: 日志文件保存目录
+        log_name: 日志文件名，默认使用时间戳命名
+    
+    Returns:
+        log_file_path: 日志文件完整路径
+    """
+    # 创建日志目录
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    
+    # 生成日志文件名
+    if log_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_name = f"train_log_{timestamp}.log"
+    
+    log_file_path = os.path.join(log_dir, log_name)
+    
+    # 创建 logger
+    logger = logging.getLogger("train")
+    logger.setLevel(logging.INFO)
+    logger.handlers = []  # 清除已有的 handlers
+    
+    # 日志格式
+    formatter = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    
+    # 1. File Handler - 输出到文件
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # 2. Console Handler - 输出到终端
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    logger.info(f"日志文件: {log_file_path}")
+    print(f"📝 日志保存至: {log_file_path}")
+    
+    return log_file_path, logger
+
+# 初始化全局 logger
+_log_file, _logger = None, None
+
+def log(msg, level="info"):
+    """统一日志接口"""
+    global _logger
+    if _logger is None:
+        # 如果还未初始化，直接 print
+        print(msg)
+    else:
+        if level == "info":
+            _logger.info(msg)
+        elif level == "warning":
+            _logger.warning(msg)
+        elif level == "error":
+            _logger.error(msg)
+        else:
+            _logger.info(msg)
+
+# Import ChannelAdapter from local path (not from conda ultralytics)
+import importlib.util
+_spec = importlib.util.spec_from_file_location(
+    "convnext_module", 
+    "/data1/undergraduate/ultralytics/ultralytics/nn/modules/convnext.py"
+)
+_convnext_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_convnext_module)
+ChannelAdapter = _convnext_module.ChannelAdapter
 
 
 # ==========================================
@@ -207,9 +289,9 @@ def train_with_config(model, config, freeze_n=5):
 
     # 打印训练信息
     freeze_status = "冻结" if freeze_n > 0 else "解冻全部"
-    print(f"\n开始训练: epochs={config['epochs']}, batch={config['batch']}, {freeze_status} backbone")
-    print(f"学习率: lr0={config['lr0']}, lrf={config.get('lrf', 0.1)}")
-    print("=" * 60)
+    log(f"开始训练: epochs={config['epochs']}, batch={config['batch']}, {freeze_status} backbone")
+    log(f"学习率: lr0={config['lr0']}, lrf={config.get('lrf', 0.1)}")
+    log("=" * 60)
 
     results = model.train(**config)
 
@@ -229,11 +311,29 @@ def main():
     parser.add_argument("--name", type=str, default=None, help="实验名称")
     parser.add_argument("--weights", type=str, default=None, help="预训练权重路径")
     parser.add_argument("--resume", type=str, default=None, help="从检查点恢复")
+    parser.add_argument("--data", type=str, default="dataset_B.yaml", help="数据集配置文件 (yaml)")
 
     cmd_args = parser.parse_args()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = cmd_args.name or f"B_channel_adapter_{timestamp}"
+
+    # ==========================================
+    # 初始化日志：同时输出到终端和文件
+    # ==========================================
+    log_file_path, global_logger = setup_logging(
+        log_dir="runs/segment",
+        log_name=f"{base_name}.log"
+    )
+    global _logger, _log_file
+    _logger = global_logger
+    _log_file = log_file_path
+
+    log("=" * 60)
+    log("ConvNeXt-Seg 实验B: 通道适配器训练")
+    log("=" * 60)
+    log(f"实验名称: {base_name}")
+    log(f"命令参数: {' '.join(sys.argv)}")
 
     # ==========================================
     # 实验B配置说明
@@ -267,7 +367,7 @@ def main():
         # 预训练权重路径
         "pretrained_path": "convnext_base_in22k_ft_in1k.pth",
         # 数据配置
-        "data": "dataset_B.yaml",
+        "data": cmd_args.data,
         "task": "segment",
         # 训练轮数
         "epochs": cmd_args.epochs,
@@ -302,12 +402,18 @@ def main():
         "perspective": 0.0,
         "flipud": 0.0,
         "fliplr": 0.5,
-        "mosaic": 1.0,
+        "mosaic": 0.0,
         "mixup": 0.0,
         "copy_paste": 0.0,
         # 分割任务特定参数
         "overlap_mask": True,
-        "mask_ratio": 4,
+        "mask_ratio": 2,
+        # Loss 权重配置 (与4/20正常训练保持一致)
+        "box": 7.5,
+        "cls": 0.5,
+        "dfl": 1.5,
+        # 分割任务权重
+        "seg": 10.0,
         # 其他设置
         "save": True,
         "save_period": 20,
@@ -336,21 +442,21 @@ def main():
     use_two_stage = (freeze_epochs > 0) and (total_epochs > freeze_epochs) and (cmd_args.freeze > 0) and (not resume_path)
 
     if use_two_stage:
-        print("\n" + "=" * 60)
-        print("检测到两阶段训练模式")
-        print(f"阶段 1: 冻结 {cmd_args.freeze} 层, 训练 {freeze_epochs} epochs")
-        print(f"阶段 2: 解冻全部, 训练 {total_epochs - freeze_epochs} epochs")
-        print("=" * 60)
-        print("\n📊 学习率策略 (Batch 24):")
-        print("  阶段1 (冻结): lr0=0.001, lrf=0.1  →  Neck+Head 快速收敛")
-        print("  阶段2 (微调): lr0=0.0005, lrf=0.1 →  Backbone 温和调整")
-        print("  (阶段2学习率为阶段1的 1/2，保护预训练权重)")
+        log("=" * 60)
+        log("检测到两阶段训练模式")
+        log(f"阶段 1: 冻结 {cmd_args.freeze} 层, 训练 {freeze_epochs} epochs")
+        log(f"阶段 2: 解冻全部, 训练 {total_epochs - freeze_epochs} epochs")
+        log("=" * 60)
+        log("学习率策略 (Batch 24):")
+        log("  阶段1 (冻结): lr0=0.001, lrf=0.1  →  Neck+Head 快速收敛")
+        log("  阶段2 (微调): lr0=0.0005, lrf=0.1 →  Backbone 温和调整")
+        log("  (阶段2学习率为阶段1的 1/2，保护预训练权重)")
 
         # ========== 阶段 1: 冻结训练 ==========
-        print("\n" + "=" * 60)
-        print("阶段 1: 冻结 backbone 训练 (Neck+Head)")
-        print("=" * 60)
-        print(f"学习率: lr0={config['lr0']}, lrf={config.get('lrf', 0.1)}")
+        log("=" * 60)
+        log("阶段 1: 冻结 backbone 训练 (Neck+Head)")
+        log("=" * 60)
+        log(f"学习率: lr0={config['lr0']}, lrf={config.get('lrf', 0.1)}")
 
         # 阶段1配置
         stage1_config = config.copy()
@@ -374,13 +480,13 @@ def main():
         # 获取阶段1最佳权重
         # ultralytics 路径规则: runs/segment/runs/{name}/weights/best.pt
         stage1_weights = f"runs/segment/runs/{stage1_config['name']}/weights/best.pt"
-        print(f"\n阶段 1 完成! 权重保存于: {stage1_weights}")
+        log(f"阶段 1 完成! 权重保存于: {stage1_weights}")
 
         # ========== 阶段 2: 解冻训练 ==========
-        print("\n" + "=" * 60)
-        print("阶段 2: 解冻全部参数，微调训练")
-        print("=" * 60)
-        print(f"学习率: lr0=0.0005, lrf={config.get('lrf', 0.1)} (backbone 使用 5e-4 学习率)")
+        log("=" * 60)
+        log("阶段 2: 解冻全部参数，微调训练")
+        log("=" * 60)
+        log(f"学习率: lr0=0.0005, lrf={config.get('lrf', 0.1)} (backbone 使用 5e-4 学习率)")
 
         # 阶段2配置
         stage2_config = config.copy()
@@ -393,10 +499,10 @@ def main():
 
         # 从阶段1加载权重
         if os.path.exists(stage1_weights):
-            print(f"从阶段1加载权重: {stage1_weights}")
+            log(f"从阶段1加载权重: {stage1_weights}")
             stage2_config["model"] = stage1_weights
         else:
-            print(f"警告: 阶段1权重不存在 {stage1_weights}，将从头开始训练阶段2")
+            log(f"警告: 阶段1权重不存在 {stage1_weights}，将从头开始训练阶段2", "warning")
 
         # 加载模型并解冻
         model2 = YOLO(stage2_config["model"])
@@ -404,40 +510,41 @@ def main():
         # 阶段2训练 (freeze=0 表示全部解冻)
         train_with_config(model2, stage2_config, freeze_n=0)
 
-        print(f"\n阶段 2 完成! 权重保存于: runs/segment/{stage2_config['name']}/weights/best.pt")
+        log(f"阶段 2 完成! 权重保存于: runs/segment/{stage2_config['name']}/weights/best.pt")
 
         # 打印最终总结
-        print("\n" + "=" * 60)
-        print("🎉 两阶段训练全部完成!")
-        print("=" * 60)
-        print(f"阶段 1 (冻结): runs/segment/{stage1_config['name']}/weights/best.pt")
-        print(f"阶段 2 (微调): runs/segment/{stage2_config['name']}/weights/best.pt")
-        print(f"最终模型: runs/segment/{stage2_config['name']}/weights/best.pt")
+        log("=" * 60)
+        log("两阶段训练全部完成!")
+        log("=" * 60)
+        log(f"阶段 1 (冻结): runs/segment/{stage1_config['name']}/weights/best.pt")
+        log(f"阶段 2 (微调): runs/segment/{stage2_config['name']}/weights/best.pt")
+        log(f"最终模型: runs/segment/{stage2_config['name']}/weights/best.pt")
 
     else:
         # ==========================================
         # 单阶段训练（普通模式）
         # ==========================================
-        print("=" * 60)
-        print("ConvNeXt-Seg 实验B: 通道适配器训练")
-        print("=" * 60)
-        print(f"模型: {config['model']}")
-        print(f"数据集: {config['data']}")
-        print(f"Epochs: {config['epochs']}")
-        print(f"Batch Size: {config['batch']}")
-        print(f"图像尺寸: {config['imgsz']}")
-        print(f"设备: {config['device']}")
-        print(f"冻结层数: {config['freeze']}")
-        print(f"优化器: {config['optimizer']}, lr={config['lr0']}, cos_lr={config['cos_lr']}")
+        log("=" * 60)
+        log("ConvNeXt-Seg 实验B: 通道适配器训练")
+        log("=" * 60)
+        log(f"模型: {config['model']}")
+        log(f"数据集: {config['data']}")
+        log(f"Epochs: {config['epochs']}")
+        log(f"Batch Size: {config['batch']}")
+        log(f"图像尺寸: {config['imgsz']}")
+        log(f"设备: {config['device']}")
+        log(f"冻结层数: {config['freeze']}")
+        log(f"优化器: {config['optimizer']}, lr={config['lr0']}, cos_lr={config['cos_lr']}")
 
         # 加载预训练权重
         pretrained_path = config.pop("pretrained_path", None)
 
         # 处理 resume 或使用预训练权重
         if resume_path:
-            print(f"从检查点恢复: {resume_path}")
+            log(f"从检查点恢复: {resume_path}")
             config["model"] = resume_path
         elif cmd_args.weights:
+            log(f"加载指定权重: {cmd_args.weights}")
             config["model"] = cmd_args.weights
 
         model = YOLO(config["model"])
@@ -447,18 +554,19 @@ def main():
             if pretrained_path and os.path.exists(pretrained_path):
                 model = load_convnext_pretrained(model, pretrained_path)
             else:
-                print(f"\n预训练权重文件不存在: {pretrained_path}")
-                print("将从头开始训练...")
+                log(f"预训练权重文件不存在: {pretrained_path}，将从头开始训练...", "warning")
 
-        print(f"{'='*60}\n")
+        log("=" * 60)
+        log("开始训练...")
 
         results = model.train(**config)
 
-        print("\n" + "=" * 60)
-        print("训练完成!")
-        print("=" * 60)
-        print(f"模型保存位置: runs/segment/{config['name']}")
-        print(f"最佳权重: runs/segment/{config['name']}/weights/best.pt")
+        log("=" * 60)
+        log("训练完成!")
+        log("=" * 60)
+        log(f"模型保存位置: runs/segment/{config['name']}")
+        log(f"最佳权重: runs/segment/{config['name']}/weights/best.pt")
+        log(f"日志文件: {_log_file}")
 
         return results
 
