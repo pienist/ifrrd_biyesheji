@@ -21,7 +21,6 @@ dataset_640x640/
 runs/
 
 # Pretrained weights (example)
-convnext_base_22k.pth
 process_dataset/build_dataset_coco.py
 process_dataset/convert_coco_to_yolo.py
 process_dataset/generate_coco_bbox.py
